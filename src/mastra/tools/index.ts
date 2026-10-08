@@ -35,23 +35,49 @@ export const weatherTool = createTool({
     conditions: z.string(),
     location: z.string(),
   }),
-  execute: async ({ input }) => {
+  // ⚠️ Mastra v1.x tool execute 签名变更：
+  //   旧: execute({ input, context })  →  新: execute(inputData, context)
+  execute: async (input) => {
     return await getWeather(input.location);
   },
 });
 
 const getWeather = async (location: string) => {
-  const geocodingUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
-    location
-  )}&count=1`;
-  const geocodingResponse = await fetch(geocodingUrl);
-  const geocodingData = (await geocodingResponse.json()) as GeocodingResponse;
+  // ---------------------------------------------------------------------------
+  // Geocoding fallback chain:
+  //   1. language=en  → 首选英文匹配（New York/London/Shanghai 全 OK，避免 "纽约" zh 误匹配为中国小村子）
+  //   2. language=zh  → 中文汉字城市名回退（匹配 "上海, 北京, 深圳" 等中文原生输入）
+  //   3. count=5 + population 排序 → 选人口最多的候选（避免 "约克小镇 US" 排到 "纽约市" 前面）
+  // ---------------------------------------------------------------------------
+  const searchLanguages: Array<string | undefined> = ["en", "zh", undefined];
 
-  if (!geocodingData.results?.[0]) {
+  let best: { latitude: number; longitude: number; name: string } | null = null;
+  let bestPop = -1;
+
+  for (const lang of searchLanguages) {
+    const url =
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=5` +
+      (lang ? `&language=${lang}` : "");
+    const resp = await fetch(url);
+    const data = (await resp.json()) as GeocodingResponse;
+    if (!data.results?.length) continue;
+
+    for (const r of data.results) {
+      const pop = (r as any).population ?? 0;
+      // 相同结果时第一次匹配到的优先；若人口大则覆盖
+      if (pop > bestPop) {
+        bestPop = pop;
+        best = { latitude: r.latitude, longitude: r.longitude, name: r.name };
+      }
+    }
+    if (best) break;
+  }
+
+  if (!best) {
     throw new Error(`Location '${location}' not found`);
   }
 
-  const { latitude, longitude, name } = geocodingData.results[0];
+  const { latitude, longitude, name } = best;
 
   const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,weather_code`;
 

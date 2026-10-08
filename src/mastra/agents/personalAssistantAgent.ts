@@ -1,4 +1,4 @@
-import { openai } from "@ai-sdk/openai";
+import { gateway } from "@ai-sdk/gateway";
 import { Agent } from "@mastra/core/agent";
 import { weatherTool } from "../tools";
 import { Memory } from "@mastra/memory";
@@ -154,7 +154,7 @@ export const personalAssistantAgent = new Agent({
          - You can use this notes directory to keep track of to do list items for the user.
          - Notes dir: ${NOTES_DIR}
   `,
-  model: openai("gpt-4o"),
+  model: gateway("openai/gpt-4o"),
   tools: { ...mcpTools, weatherTool },
   workflows: {
     dailyWorkflow,

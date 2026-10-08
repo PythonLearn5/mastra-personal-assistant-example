@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "echo \"Run one of: test:tool / test:weather-agent / test:pa-smoke.\" && exit 1",
+    "test:tool": "tsx tests/weather-tool.test.ts",
+    "test:weather-agent": "tsx tests/weather-agent.e2e.ts",
+    "test:pa-smoke": "tsx tests/pa-agent-smoke.e2e.ts",
     "dev": "mastra dev"
   },
   "keywords": [],
@@ -12,6 +15,7 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@ai-sdk/gateway": "^4.0.108",
     "@ai-sdk/openai": "^4.0.89",
     "@mastra/core": "^1.75.0",
     "@mastra/libsql": "^1.25.1",
