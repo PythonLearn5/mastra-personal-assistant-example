@@ -5,6 +5,10 @@ import { personalAssistantAgent } from "./agents/personalAssistantAgent";
 import { dailyWorkflow } from "./workflows";
 import { LibSQLStore } from "@mastra/libsql";
 import { weatherAgent } from "./agents/weatherAgent";
+import path from "node:path";
+
+const PROJECT_ROOT = process.cwd();
+const MASTRA_DB_PATH = path.join(PROJECT_ROOT, "mastra.db");
 
 export const mastra: Mastra = new Mastra({
   agents: {
@@ -18,17 +22,23 @@ export const mastra: Mastra = new Mastra({
     level: "info",
   }),
   storage: new LibSQLStore({
-    url: "file:./mastra.db",
+    id: "mastra-root-store",
+    url: `file:${MASTRA_DB_PATH}`,
   }),
 });
 
-// Initialize Telegram bot if token is available
+// ---------------------------------------------------------------------------
+// Initialize Telegram bot if token is available (and not a placeholder)
+// ---------------------------------------------------------------------------
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
-if (!TELEGRAM_BOT_TOKEN) {
-  console.error("TELEGRAM_BOT_TOKEN is not set in environment variables");
-  process.exit(1);
+let _bot: TelegramIntegration | undefined;
+if (TELEGRAM_BOT_TOKEN && TELEGRAM_BOT_TOKEN !== "your_telegram_bot_token_here") {
+  _bot = new TelegramIntegration(TELEGRAM_BOT_TOKEN);
+} else {
+  console.warn(
+    "[Telegram] TELEGRAM_BOT_TOKEN is not configured; Telegram bot is disabled."
+  );
 }
 
-// Start the Telegram bot
-export const telegramBot = new TelegramIntegration(TELEGRAM_BOT_TOKEN);
+export const telegramBot: TelegramIntegration | undefined = _bot;

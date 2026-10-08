@@ -1,91 +1,120 @@
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 
-// Define the steps separately
-const getHackerNewsArticles = createStep({
-  id: "getHackerNewsArticles",
-  description: "Gets the top 20 stories from Hacker News",
+/**
+ * Step 1: Fetch latest HN stories via personalAssistantAgent
+ */
+const fetchLatestHackerNewsStep = createStep({
+  id: "fetch-latest-hacker-news",
+  description: "Fetches the latest Hacker News stories with the Personal Assistant",
   inputSchema: z.object({}),
   outputSchema: z.object({
-    message: z.string(),
+    hnData: z.string(),
   }),
-  execute: async ({ mastra }) => {
+  execute: async ({ mastra, getStepResult }) => {
     const agent = mastra.getAgent("personalAssistantAgent");
-    const hnPrompt = `
-      Fetch the top 20 stories from Hacker News.
-      After retreiving the top stories, only return stories that fit into my interests as follows:
+    const prompt = `
+      Use the Hacker News tools available to search for 5 latest stories about:
       - AI
+      - TypeScript
       - Javascript
-      - Typescript
-      - Science
-
-      Return a maximum of 5 stories after filtering based on my interests.
+      
+      Return only the stories as a summary in markdown format. 
+      If there are no stories, return "No Hacker News stories found".
     `;
-    const response = await agent.generate(
-      [{ role: "user", content: hnPrompt }],
-      { maxSteps: 5 }
-    );
-    console.log("result hn", response);
+    const result = await agent.generate(prompt, { maxSteps: 10 });
+
     return {
-      message: response.text,
+      hnData: result.text ?? "No Hacker News stories found",
     };
   },
 });
 
-const summarizeMastraPRs = createStep({
-  id: "summarizeMastraPRs",
-  description: "Summarizes the last 10 PRs from the @mastra-ai/mastra repo",
-  inputSchema: z.object({ message: z.string() }),
+/**
+ * Step 2: Fetch recent GitHub activity via personalAssistantAgent
+ */
+const fetchLatestGithubActivityStep = createStep({
+  id: "fetch-latest-github-activity",
+  description: "Fetches the latest GitHub activity with the Personal Assistant",
+  inputSchema: z.object({}),
   outputSchema: z.object({
-    message: z.string(),
+    githubData: z.string(),
   }),
-  execute: async ({ mastra }) => {
+  execute: async ({ mastra, getStepResult }) => {
     const agent = mastra.getAgent("personalAssistantAgent");
-    const githubPrompt = `
-      Fetch the last 10 PRs from the @mastra-ai/mastra repo sorting by date descending.
-      After retreiving the PRs, provide a few paragraph summary of what changes are being made.
+    const { hnData } = getStepResult(fetchLatestHackerNewsStep) as { hnData: string };
+    const prompt = `
+      Monitor GitHub for recent activity using the GitHub tools.
+      
+      Look for:
+      1. Recent commits
+      2. Pull requests
+      3. Issues
+      
+      Summary should be formatted in markdown.
+
+      Here is the latest data from the Hacker News step:
+      ${hnData}
+
+      If you cannot find any GitHub activity, return "No GitHub activity found".
     `;
-    const response = await agent.generate(
-      [{ role: "user", content: githubPrompt }],
-      { maxSteps: 5 }
-    );
-    console.log("result prs", response);
+    const result = await agent.generate(prompt, { maxSteps: 10 });
+
     return {
-      message: response.text,
+      githubData: result.text ?? "No GitHub activity found",
     };
   },
 });
 
-const combineMessages = createStep({
-  id: "combineMessages",
-  description: "Combines the messages from the hacker news and mastra PRs",
-  inputSchema: z.object({ message: z.string() }),
+/**
+ * Step 3: Produce a combined daily digest
+ */
+const produceDailyDigestStep = createStep({
+  id: "produce-daily-digest",
+  description: "Produces the daily digest based on the daily workflow steps",
+  inputSchema: z.object({}),
   outputSchema: z.object({
-    message: z.string(),
+    dailyDigest: z.string(),
   }),
   execute: async ({ getStepResult }) => {
-    const hackerNews = getStepResult(getHackerNewsArticles);
-    console.log("hackerNews", hackerNews);
-    const mastraPRs = getStepResult(summarizeMastraPRs);
-    console.log("mastraPRs", mastraPRs);
-    //console.log("result combine", { hackerNews?.message, mastraPRs?.message });
+    const { hnData } = getStepResult(fetchLatestHackerNewsStep) as { hnData: string };
+    const { githubData } = getStepResult(fetchLatestGithubActivityStep) as {
+      githubData: string;
+    };
+
     return {
-      message: `${hackerNews.message}\n\n${mastraPRs.message}`,
+      dailyDigest: `
+# Daily Digest
+
+## Latest Hacker News
+${hnData}
+
+## Recent GitHub Activity
+${githubData}
+      `.trim(),
     };
   },
 });
 
-// Create the workflow
+/**
+ * Workflow: chains steps above
+ */
 export const dailyWorkflow = createWorkflow({
   id: "daily-workflow",
-  description: "Daily workflow",
-  inputSchema: z.object({}),
-  outputSchema: z.object({}),
-});
-
-// Add steps to the workflow
-dailyWorkflow
-  .then(getHackerNewsArticles)
-  .then(summarizeMastraPRs)
-  .then(combineMessages)
+  description:
+    "This workflow gets all the data needed for a personal assistant to send a daily briefing",
+  inputSchema: z.object({
+    firstName: z.string(),
+  }),
+  outputSchema: z.object({
+    email: z.string(),
+    subject: z.string(),
+  }),
+  schedule: {
+    cron: "0 8 * * *", // Every day at 8am
+  },
+})
+  .then(fetchLatestHackerNewsStep)
+  .then(fetchLatestGithubActivityStep)
+  .then(produceDailyDigestStep)
   .commit();

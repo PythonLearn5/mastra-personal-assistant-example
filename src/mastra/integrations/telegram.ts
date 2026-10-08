@@ -24,7 +24,7 @@ export class TelegramIntegration {
     return str.substring(0, maxLength) + "... [truncated]";
   }
 
-  private formatToolResult(result: any): string {
+  private formatToolResult(result: unknown): string {
     try {
       const jsonString = JSON.stringify(result, null, 2);
       return this.escapeMarkdown(
@@ -96,63 +96,84 @@ export class TelegramIntegration {
       let currentMessageId = sentMessage.message_id;
       const UPDATE_INTERVAL = 500; // Update every 500ms to avoid rate limits
 
-      // Stream response using the agent
-      const stream = await personalAssistantAgent.stream(text, {
-        threadId: `telegram-${chatId}`, // Use chat ID as thread ID
-        resourceId: userId, // Use user ID as resource ID
-        context: [
-          {
-            role: "system",
-            content: `Current user: ${firstName} (${username})`,
-          },
+      // -----------------------------------------------------------------------
+      // Stream response.  v1.x API notes:
+      //   - first arg is `MessageListInput`, no longer a plain string.
+      //   - memory.{thread,resource} replaces threadId/resourceId.
+      //   - context messages are now merged inline in the messages array.
+      // -----------------------------------------------------------------------
+      const stream = await personalAssistantAgent.stream(
+        [
+          { role: "system", content: `Current user: ${firstName} (${username})` },
+          { role: "user", content: text },
         ],
-      });
+        {
+          memory: {
+            thread: `telegram-${chatId}`,
+            resource: userId,
+          },
+          maxSteps: 10,
+        }
+      );
 
-      // Process the full stream
+      // Process the full stream (new Mastra v1.x chunk shape: { type, payload })
       for await (const chunk of stream.fullStream) {
         let shouldUpdate = false;
         let chunkText = "";
 
         switch (chunk.type) {
           case "text-delta":
-            chunkText = this.escapeMarkdown(chunk.textDelta);
+            chunkText = this.escapeMarkdown(chunk.payload.text ?? "");
             shouldUpdate = true;
             break;
 
-          case "tool-call":
-            const formattedArgs = JSON.stringify(chunk.args, null, 2);
+          case "tool-call": {
+            const formattedArgs = JSON.stringify(chunk.payload.args ?? {}, null, 2);
             chunkText = `\n🛠️ Using tool: ${this.escapeMarkdown(
-              chunk.toolName
+              chunk.payload.toolName ?? "<unknown>"
             )}\nArguments:\n\`\`\`\n${this.escapeMarkdown(
               formattedArgs
             )}\n\`\`\`\n`;
-            console.log(`Tool call: ${chunk.toolName}`, chunk.args);
+            console.log(
+              `Tool call: ${chunk.payload.toolName}`,
+              chunk.payload.args
+            );
             shouldUpdate = true;
             break;
+          }
 
-          case "tool-result":
-            const formattedResult = this.formatToolResult(chunk.result);
+          case "tool-result": {
+            const formattedResult = this.formatToolResult(chunk.payload.result);
             chunkText = `✨ Result:\n\`\`\`\n${formattedResult}\n\`\`\`\n`;
-            console.log("Tool result:", chunk.result);
+            console.log("Tool result:", chunk.payload.result);
             shouldUpdate = true;
             break;
+          }
 
-          case "error":
-            chunkText = `\n❌ Error: ${this.escapeMarkdown(
-              String(chunk.error)
-            )}\n`;
-            console.error("Error:", chunk.error);
+          case "error": {
+            const err =
+              chunk.payload && typeof chunk.payload === "object" && "error" in chunk.payload
+                ? (chunk.payload as any).error
+                : String(chunk.payload);
+            chunkText = `\n❌ Error: ${this.escapeMarkdown(String(err))}\n`;
+            console.error("Error stream chunk:", chunk.payload);
             shouldUpdate = true;
             break;
+          }
 
-          case "reasoning":
-            chunkText = `\n💭 ${this.escapeMarkdown(chunk.textDelta)}\n`;
-            console.log("Reasoning:", chunk.textDelta);
+          case "reasoning-delta": {
+            const t =
+              chunk.payload && typeof chunk.payload === "object" && "text" in chunk.payload
+                ? (chunk.payload as any).text
+                : "";
+            chunkText = `\n💭 ${this.escapeMarkdown(String(t ?? ""))}\n`;
+            if (t) console.log("Reasoning delta:", t);
             shouldUpdate = true;
             break;
+          }
         }
 
-        if (shouldUpdate) {
+        if (shouldUpdate && chunkText) {
           currentResponse += chunkText;
           const now = Date.now();
           if (now - lastUpdate >= UPDATE_INTERVAL) {

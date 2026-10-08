@@ -1,6 +1,5 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import { mastra } from "../";
 
 interface GeocodingResponse {
   results: {
@@ -36,8 +35,8 @@ export const weatherTool = createTool({
     conditions: z.string(),
     location: z.string(),
   }),
-  execute: async ({ context }) => {
-    return await getWeather(context.location);
+  execute: async ({ input }) => {
+    return await getWeather(input.location);
   },
 });
 
@@ -103,20 +102,3 @@ function getWeatherCondition(code: number): string {
   };
   return conditions[code] || "Unknown";
 }
-
-// export const dailyWorkflowTool = createTool({
-//   id: "daily-workflow-tool",
-//   description:
-//     "Runs the daily workflow task which returns a summary of news and github activity",
-
-//   outputSchema: z.object({
-//     message: z.string(),
-//   }),
-//   execute: async ({ context }) => {
-//     const { runId, start } = mastra.getWorkflow("dailyWorkflow").createRun();
-//     const result = await start();
-//     return {
-//       message: result?.result?.message || "",
-//     };
-//   },
-// });
