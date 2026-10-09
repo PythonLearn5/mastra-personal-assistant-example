@@ -6,6 +6,7 @@ import { dailyWorkflow } from "./workflows";
 import { LibSQLStore } from "@mastra/libsql";
 import { weatherAgent } from "./agents/weatherAgent";
 import path from "node:path";
+import { customerTool } from "./tools/customerTool";
 
 const PROJECT_ROOT = process.cwd();
 const MASTRA_DB_PATH = path.join(PROJECT_ROOT, "mastra.db");
@@ -14,6 +15,9 @@ export const mastra: Mastra = new Mastra({
   agents: {
     personalAssistantAgent,
     weatherAgent,
+  },
+  tools: {
+     customerTool,
   },
   workflows: {
     dailyWorkflow,
