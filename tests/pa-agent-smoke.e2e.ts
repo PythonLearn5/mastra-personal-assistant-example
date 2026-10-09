@@ -15,13 +15,25 @@ const { personalAssistantAgent } = await import("../src/mastra/agents/personalAs
 console.log("✅ Agent loaded");
 console.log(
   "   id=", (personalAssistantAgent as any).id ?? "<missing>",
-  "  memory=", !!((personalAssistantAgent as any).memory),
-  "  workflows=", Object.keys((personalAssistantAgent as any).workflows ?? {}),
+  "  memory=", !!(((personalAssistantAgent as any).memory) ?? (typeof (personalAssistantAgent as any).listTools === "function")),
+  "  workflows=", Object.keys((await (personalAssistantAgent as any).listWorkflows?.()) ?? ((personalAssistantAgent as any).workflows) ?? {}),
 );
 
-const toolCount = Object.keys((personalAssistantAgent as any).tools ?? {}).length;
+// Mastra v1: 工具必须用异步 agent.listTools() 拿（同步的 .tools 属性不再存在）。
+// 这个函数会合并 MCP / workflow / memory 等工具，并给 MCP 工具自动加上 <server>_ 前缀。
+const listedTools: Record<string, any> = (await (personalAssistantAgent as any).listTools?.()) ?? (personalAssistantAgent as any).tools ?? {};
+const toolNames = Object.keys(listedTools);
+const toolCount = toolNames.length;
 console.log("   tools registered:", toolCount);
-console.log("   tool names (first 15):", Object.keys((personalAssistantAgent as any).tools ?? {}).slice(0, 15).join(", "));
+console.log("   tool names (first 15):", toolNames.slice(0, 15).join(", "));
+
+// 快速前缀分布（一眼能看出 textEditor_/hackernews_/github_ 三个 MCP namespace 是否都连上了）
+const prefixCount = new Map<string, number>();
+for (const n of toolNames) {
+  const p = n.includes("_") ? n.slice(0, n.indexOf("_")) : "(no-prefix)";
+  prefixCount.set(p, (prefixCount.get(p) ?? 0) + 1);
+}
+console.log("   前缀分布:", [...prefixCount.entries()].map(([p, c]) => `${p}×${c}`).join(", "));
 
 if (toolCount < 3) {
   console.warn("⚠️  Expected HN + filesystem + weather = at least 3 tools.  MCP might not have connected.");
